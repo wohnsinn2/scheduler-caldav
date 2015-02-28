@@ -24,31 +24,39 @@ app.debug = True
 # TODO read from config file
 cal_user = 'ws2'
 cal_user_pw = '2342'
-auth_url_templ = "http://localhost:5008/api/auth"
+auth_url_templ = "http://localhost:5008/api/user/auth"
 permission_url_templ = "http://localhost:5008/api/user/{user}/permissions/calendars/{calendar}"
 # TODO add authentication with urllib/caldav client lib
-cal_client_url_templ = "http://{cal_user}:{cal_user_pw}@localhost:5232/caldav/{cal_user}"
-cal_path_templ = "/caldav/{cal_user}/{calendar}"
+cal_client_url_templ = "http://{cal_user}:{cal_user_pw}@localhost:5232/caldav/{cal_user}/{calendar}.ics"
+cal_path_templ = "/caldav/{cal_user}/{calendar}.ics/"
 sc_name = "sid"
 
 
 # TODO can we do a client connection w/o a calendar?
-def get_client():
+def get_client(calendar):
     client_url = cal_client_url_templ.format(
         cal_user=cal_user,
         cal_user_pw=cal_user_pw,
+        calendar=calendar
     )
     return caldav.DAVClient(client_url)
 
 
 def get_config(conf_file='./config'):
-    file_name = os.environ['CALDAV_MW_CONFIG'] or conf_file
-    with open(file_name) as f:
-        config = configparser.SafeConfigParser(f)
-    return config
+    try:
+        file_name = os.environ['CALDAV_MW_CONFIG']
+    except KeyError:
+        file_name = conf_file
+    parser = configparser.SafeConfigParser()
+    parser.read(file_name)
+    return parser
 
 def get_user(req):
-    session_cookie = req.cookies[sc_name]
+    try:
+        session_cookie = req.cookies[sc_name]
+    except:
+        app.logger.debug('No session cookie in request.')
+        return None
     auth_url = auth_url_templ.format(session_cookie)
     cookies = {sc_name: session_cookie}
     response = requests.get(auth_url, cookies=cookies)
@@ -72,6 +80,9 @@ def check_permission(cal, user, want):
 def check_user_permission(cal, req, want):
     try:
         user = get_user(req)
+        if user is None:
+            return False
+        app.logger.debug('Got user {} from auth backend.'.format(user))
         return check_permission(cal, user, want)
     except:
         return False
@@ -84,6 +95,7 @@ def get_cal_path(cal_user, cal_name):
 def get_system_cal(cal_name):
     # TODO custom context to hold client and calendar
     global cal_user
+    client = get_client(cal_name)
     cal_path = get_cal_path(cal_user, cal_name)
     return caldav.Calendar(client, cal_path)
 
@@ -91,7 +103,6 @@ def get_system_cal(cal_name):
 @app.route('/calendar/<cal>')
 def calendar(cal):
     resp = make_response(render_template('index.html', cal=cal))
-    resp.set_cookie('sid', 'user1')
     return resp
 
 
@@ -168,6 +179,5 @@ def event(cal):
 if __name__ == '__main__':
     requests = requests_native.Session()
     requests.hooks = {"response": requests_raise}
-    config = get_config()
-    client = get_client()
+    #config = get_config()
     app.run()

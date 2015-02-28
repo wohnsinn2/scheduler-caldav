@@ -69,7 +69,7 @@ def auth_post(user, password):
 
 def auth_cookie(sid):
     if sid in acl[CREDS].keys():
-        return make_response('true', 200)
+        return make_response(sid, 200)
     else:
         abort(403)
 
