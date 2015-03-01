@@ -127,7 +127,7 @@ def events(cal):
     if check_user_permission(cal, request, 'r'):
         # TODO have SchedulerCalendar handle name resolution
         sched_cal = SchedulerCalendar.fromCalendar(dav_cal)
-        return sched_cal.toXMLString()
+        return Response(sched_cal.toXMLString(), mimetype='application/xml')
     else:
         abort(403)
 
