@@ -8,96 +8,25 @@ import requests as requests_native
 import urllib
 import os
 
+import config
+#TODO change references
+from helper import *
+
 try:
     import ConfigParser as configparser
 except:
     import configparser
 
+#TODO let SchedulerCalendar create the the client connection
+#TODO permissions and user retrieval in principal class
 from scheduler import SchedulerCalendar, SchedulerEvent
 
 
 def requests_raise(response, *args, **kwargs):
     response.raise_for_status()
 
+
 app = Flask(__name__)
-app.debug = True
-# TODO read from config file
-cal_user = 'ws2'
-cal_user_pw = '2342'
-auth_url_templ = "http://localhost:5008/api/user/auth"
-permission_url_templ = "http://localhost:5008/api/user/{user}/permissions/calendars/{calendar}"
-# TODO add authentication with urllib/caldav client lib
-cal_client_url_templ = "http://{cal_user}:{cal_user_pw}@localhost:5232/caldav/{cal_user}/{calendar}.ics"
-cal_path_templ = "/caldav/{cal_user}/{calendar}.ics/"
-sc_name = "sid"
-
-
-# TODO can we do a client connection w/o a calendar?
-def get_client(calendar):
-    client_url = cal_client_url_templ.format(
-        cal_user=cal_user,
-        cal_user_pw=cal_user_pw,
-        calendar=calendar
-    )
-    return caldav.DAVClient(client_url)
-
-
-def get_config(conf_file='./config'):
-    try:
-        file_name = os.environ['CALDAV_MW_CONFIG']
-    except KeyError:
-        file_name = conf_file
-    parser = configparser.SafeConfigParser()
-    parser.read(file_name)
-    return parser
-
-def get_user(req):
-    try:
-        session_cookie = req.cookies[sc_name]
-    except:
-        app.logger.debug('No session cookie in request.')
-        return None
-    auth_url = auth_url_templ.format(session_cookie)
-    cookies = {sc_name: session_cookie}
-    response = requests.get(auth_url, cookies=cookies)
-    app.logger.debug('Got user {} for session cookie {}.'.format(
-        session_cookie, response))
-    return response.content
-
-
-# TODO cal name in model
-def check_permission(cal, user, want):
-    # TODO implicit unsafety, like Jinja2
-    cal_qt = urllib.quote_plus(cal)
-    user_qt = urllib.quote_plus(user)
-    permission_url = permission_url_templ.format(user=user_qt, calendar=cal_qt)
-    resp = requests.get(permission_url)
-    app.logger.debug('Got permission {} for user {} wanting {}.'.format(
-        resp, user, want))
-    return want in resp.content
-
-
-def check_user_permission(cal, req, want):
-    try:
-        user = get_user(req)
-        if user is None:
-            return False
-        app.logger.debug('Got user {} from auth backend.'.format(user))
-        return check_permission(cal, user, want)
-    except:
-        return False
-
-
-def get_cal_path(cal_user, cal_name):
-    return cal_path_templ.format(cal_user=cal_user, calendar=cal_name)
-
-
-def get_system_cal(cal_name):
-    # TODO custom context to hold client and calendar
-    global cal_user
-    client = get_client(cal_name)
-    cal_path = get_cal_path(cal_user, cal_name)
-    return caldav.Calendar(client, cal_path)
 
 
 @app.route('/calendar/<cal>')
@@ -135,8 +64,9 @@ def events(cal):
 # modify single events
 @app.route('/event/<cal>', methods=['POST'])
 def event(cal):
-    # get calendar from id
-    #
+    if not check_user_permission(cal, request, 'w'):
+        abort(403)
+
     start = request.form['start_date']
     end = request.form['end_date']
     text = request.form['text']
@@ -177,7 +107,8 @@ def event(cal):
 
 
 if __name__ == '__main__':
+    app.debug = True
     requests = requests_native.Session()
     requests.hooks = {"response": requests_raise}
-    #config = get_config()
+    conf = config.get_config()
     app.run()
